@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Threading;
 using WebAPI.Models;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
+using System;
 
 namespace WebAPI.Controllers
 {
@@ -10,7 +10,7 @@ namespace WebAPI.Controllers
     public class ApiController : Controller
     {
         private readonly DataContext _context;
-        
+        private static readonly object _lock = new object();
 
         public ApiController(DataContext context)
         {
@@ -18,11 +18,8 @@ namespace WebAPI.Controllers
 
             if (_context.DataItems.Count() == 0)
             {
-                if (_context.DataItems.Count() == 0)
-                {
-                    _context.DataItems.Add(new DataItem { ID = "null" });
-                    _context.SaveChanges();
-                }
+                _context.FromBinary("data.bin");
+                _context.SaveChanges();
             }
         }
 
@@ -35,9 +32,6 @@ namespace WebAPI.Controllers
         [HttpGet("{args}")]
         public object Main(string args)
         {
-            if (args == "index")
-                return Index();
-
             if (!args.Contains(Utility.SEPHEAD))
                 return "Something happened.";
             if (args.Split(Utility.SEPHEAD).Length > 2)
@@ -51,29 +45,46 @@ namespace WebAPI.Controllers
                     return Get(arg);
                 case "set":
                     return Set(arg);
+                case "index":
+                    if (VerifyKey(Utility.GetArg(arg, "key")))
+                        return Index();
+                    else return "Key incorrect.";
             }
 
             return NotFound();
         }
 
+        public bool VerifyKey(string key)
+        {
+            DateTime now = DateTime.Now;
+            byte[] bytes = Convert.FromBase64String(key);
+
+            string str = "";
+            foreach (byte b in bytes)
+                str += (char)b;
+            DateTime time = DateTime.Parse(str);
+
+            return Math.Abs(now.Subtract(time).TotalSeconds) < 128;
+        }
+
         public object Index()
         {
-            string content = "<html lang=\"zh-cn\"><head><title>雾霾检测系统 - PMSensor with ASP.NET Core and Raspberry Pi</title><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"5\"></head><body><table border=\"1\" cellpadding=\"8\"><tr><th>监测点名称</th><th>上传时间</th><th>PM2.5浓度（ug/m3）</th><th>PM10浓度（ug/m3）</th><th>环境温度（℃）</th><th>环境湿度（%）</th><th>大气压（kPa）</th></tr>";
+            string content = "<html lang=\"zh-cn\"><head><title>NyaSamaStat - MC Mod Stat with ASP.NET Core</title><meta charset=\"utf-8\"></head><body><table border=\"1\" cellpadding=\"8\"><tr><th>ID</th><th>Last Login</th><th>Side</th><th>Address</th><th>Players</th></tr>";
 
+            Monitor.Enter(_lock);
             foreach (DataItem item in _context.DataItems)
             {
                 content += "<tr>";
 
                 content += "<th>" + item.ID + "</th>";
-                content += "<th>" + item.Time + "</th>";
-                content += "<th>" + item.PM25 + "</th>";
-                content += "<th>" + item.PM10 + "</th>";
-                content += "<th>" + item.Temper + "</th>";
-                content += "<th>" + item.Humi + "</th>";
-                content += "<th>" + item.Pressure + "</th>";
+                content += "<th>" + item.Time.ToString("yyyy-MM-ddTHH:mm:ss") + "</th>";
+                content += "<th>" + item.Side + "</th>";
+                content += "<th>" + item.Addr + "</th>";
+                content += "<th>" + item.Players + "</th>";
 
                 content += "</tr>";
             }
+            Monitor.Exit(_lock);
 
             content += "</table></body></html>";
 
@@ -89,11 +100,13 @@ namespace WebAPI.Controllers
             if (id == arg)
                 return "ERR: " + arg;
 
+            Monitor.Enter(_lock);
             DataItem item = _context.DataItems.FirstOrDefault(t => t.ID == id);
+            Monitor.Exit(_lock);
             if (item == null)
                 return "NONE: " + arg;
 
-            return new ObjectResult(item.SetResult("GOT"));
+            return "GOT: " + item.ToString();
         }
 
         public object Set(string arg)
@@ -101,20 +114,34 @@ namespace WebAPI.Controllers
             DataItem item = DataItem.Make(arg);
             if (item == null)
                 return "ERR: " + arg;
+            if (!item.Verify())
+                return "VERIFY ERR: " + arg;
+            if (Math.Abs(item.Time.Subtract(DateTime.Now).TotalSeconds) > 128)
+                return "TIMESTAMP ERR: " + arg;
 
             string id = item.ID;
-            DataItem old = _context.DataItems.FirstOrDefault(t => t.ID == id);
-            if (old == null)
+            try
             {
-                _context.DataItems.Add(item);
-                _context.SaveChanges();
-                return new ObjectResult(item.SetResult("ADDED"));
+                Monitor.Enter(_lock);
+                DataItem old = _context.DataItems.FirstOrDefault(t => t.ID == id);
+                if (old == null)
+                {
+                    _context.DataItems.Add(item);
+                    _context.SaveChanges();
+                    _context.ToBinary("data.bin");
+                    return "ADDED: " + item.ToString();
+                }
+                else
+                {
+                    item.CopyTo(old);
+                    _context.SaveChanges();
+                    _context.ToBinary("data.bin");
+                    return "UPDATED: " + item.ToString();
+                }
             }
-            else
+            finally
             {
-                item.CopyTo(old);
-                _context.SaveChanges();
-                return new ObjectResult(old.SetResult("UPDATED"));
+                Monitor.Exit(_lock);
             }
         }
     }

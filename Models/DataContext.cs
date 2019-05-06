@@ -1,58 +1,86 @@
 ﻿using System;
 using System.IO;
-using System.Threading.Tasks;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
 
+using System.Collections.Generic;
 using System.Runtime.Serialization.Formatters.Binary;
 
 namespace WebAPI.Models
 {
     public class DataContext : DbContext
     {
+        private static readonly object _lock = new object();
 
         public void ToBinary(string path)
         {
-            FileStream stream = new FileStream(path, FileMode.OpenOrCreate);
-            BinaryFormatter formatter = new BinaryFormatter();
-            try
+            List<DataItem> items = new List<DataItem>();
+            foreach (DataItem i in DataItems)
+                items.Add(i);
+
+            if (Monitor.TryEnter(_lock))
             {
-                DataItems.ToList()
-                formatter.Serialize(stream, DataItems.T.ToArray());
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
-            finally
-            {
-                stream.Close();
+                try
+                {
+                    FileStream stream = new FileStream(path, FileMode.OpenOrCreate);
+                    BinaryFormatter formatter = new BinaryFormatter();
+                    formatter.Serialize(stream, items.ToArray());
+                    stream.Close();
+                }
+                catch (Exception e)
+                {
+                    throw e;
+                }
+                finally
+                {
+                    Monitor.Exit(_lock);
+                }
             }
         }
 
-        public static void FromBinary(Map map, string path)
+        public void FromBinary(string path)
         {
             if (!File.Exists(path))
+                return;
+            if (File.ReadAllBytes(path).Length == 0)
+                return;
+
+            if (Monitor.TryEnter(_lock))
             {
-                throw new FileNotFoundException("File not found.", path);
-            }
-            FileStream stream = new FileStream(path, FileMode.Open);
-            BinaryFormatter formatter = new BinaryFormatter();
-            try
-            {
-                object obj = formatter.Deserialize(stream);
-                if (!(obj is IObject[]))
+                try
                 {
-                    throw new FileLoadException("File is incorrect.", path);
+                    FileStream stream = new FileStream(path, FileMode.Open);
+                    BinaryFormatter formatter = new BinaryFormatter();
+                    object obj = formatter.Deserialize(stream);
+                    stream.Close();
+
+                    if (!(obj is DataItem[]))
+                    {
+                        throw new FileLoadException("File is incorrect.", path);
+                    }
+
+                    List<DataItem> items = new List<DataItem>();
+                    foreach (DataItem i in DataItems)
+                        items.Add(i);
+                    foreach (DataItem i in items)
+                        DataItems.Remove(i);
+
+                    items.Clear();
+                    items.AddRange((DataItem[])obj);
+                    Dictionary<string, DataItem> dict = new Dictionary<string, DataItem>();
+                    foreach (DataItem i in items)
+                        dict.Add(i.ID, i);
+
+                    DataItems.AddRange(dict.Values);
                 }
-                map.core.Add((IObject[])obj);
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
-            finally
-            {
-                stream.Close();
+                catch (Exception e)
+                {
+                    throw e;
+                }
+                finally
+                {
+                    Monitor.Exit(_lock);
+                }
             }
         }
 
