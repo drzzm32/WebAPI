@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using WebAPI.Models;
 using System.Linq;
+using System.IO;
 
 namespace WebAPI.Controllers
 {
@@ -8,7 +9,6 @@ namespace WebAPI.Controllers
     public class ApiController : Controller
     {
         private readonly DataContext _context;
-        
 
         public ApiController(DataContext context)
         {
@@ -16,6 +16,8 @@ namespace WebAPI.Controllers
 
             if (_context.DataItems.Count() == 0)
             {
+                BinaryReader reader = new BinaryReader(new FileStream("database.bin", FileMode.OpenOrCreate));
+                
                 _context.DataItems.Add(new DataItem { ID = "null" });
                 _context.DataItems.Add(new DataItem { ID = "test" });
                 _context.SaveChanges();

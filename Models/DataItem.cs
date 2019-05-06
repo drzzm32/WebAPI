@@ -4,24 +4,25 @@ namespace WebAPI.Models
 {
     public class DataItem
     {
+        public readonly int MASK = 0xFFFF;
+
         public string Result { get;  set; }
+
         public string ID { get; set; }
         public DateTime Time { get; set; }
-        public int PM25 { get; set; }
-        public int PM10 { get; set; }
-        public float Temper { get; set; }
-        public float Humi { get; set; }
-        public float Pressure { get; set; }
+        public string Side { get; set; }
+        public string Addr { get; set; }
+        public int Players { get; set; }
+
+        public int ChkSum { get; set; }
 
         public void CopyTo(DataItem item)
         {
             item.ID = ID;
             item.Time = Time;
-            item.PM25 = PM25;
-            item.PM10 = PM10;
-            item.Temper = Temper;
-            item.Humi = Humi;
-            item.Pressure = Pressure;
+            item.Side = Side;
+            item.Addr = Addr;
+            item.Players = Players;
         }
 
         public DataItem SetResult(string result)
@@ -43,18 +44,37 @@ namespace WebAPI.Models
             tmp = Utility.GetArg(args, "time");
             if (tmp != args) item.Time = DateTime.Parse(tmp);
             else return null;
-            tmp = Utility.GetArg(args, "pm25");
-            if (tmp != args) item.PM25 = int.Parse(tmp);
-            tmp = Utility.GetArg(args, "pm10");
-            if (tmp != args) item.PM10 = int.Parse(tmp);
-            tmp = Utility.GetArg(args, "temper");
-            if (tmp != args) item.Temper = float.Parse(tmp);
-            tmp = Utility.GetArg(args, "humi");
-            if (tmp != args) item.Humi = float.Parse(tmp);
-            tmp = Utility.GetArg(args, "pressure");
-            if (tmp != args) item.Pressure = float.Parse(tmp);
+            tmp = Utility.GetArg(args, "side");
+            if (tmp != args) item.Side = tmp;
+            tmp = Utility.GetArg(args, "addr");
+            if (tmp != args) item.Addr = tmp;
+            tmp = Utility.GetArg(args, "chksum");
+            if (tmp != args) item.ChkSum = int.Parse(tmp);
 
             return item;
+        }
+
+        public bool Verify()
+        {
+            int sum = 0;
+            foreach (char c in ID)
+            {
+                sum += c; sum &= MASK;
+            }
+            foreach (char c in Time.ToString())
+            {
+                sum += c; sum &= MASK;
+            }
+            foreach (char c in Side)
+            {
+                sum += c; sum &= MASK;
+            }
+            foreach (char c in Addr)
+            {
+                sum += c; sum &= MASK;
+            }
+
+            return sum == ChkSum;
         }
     }
 }
