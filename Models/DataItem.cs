@@ -1,27 +1,30 @@
 ﻿using System;
+using System.Reflection;
+using System.Runtime.Serialization;
+using System.Security.Permissions;
 
 namespace WebAPI.Models
 {
-    public class DataItem
+    [Serializable]
+    public class DataItem : ISerializable
     {
         public string Result { get;  set; }
         public string ID { get; set; }
         public DateTime Time { get; set; }
-        public int PM25 { get; set; }
-        public int PM10 { get; set; }
-        public float Temper { get; set; }
-        public float Humi { get; set; }
-        public float Pressure { get; set; }
+        public string Data { get; set; }
+
+        public DataItem()
+        {
+            ID = "null";
+            Time = DateTime.MinValue;
+            Data = "null";
+        }
 
         public void CopyTo(DataItem item)
         {
             item.ID = ID;
             item.Time = Time;
-            item.PM25 = PM25;
-            item.PM10 = PM10;
-            item.Temper = Temper;
-            item.Humi = Humi;
-            item.Pressure = Pressure;
+            item.Data = Data;
         }
 
         public DataItem SetResult(string result)
@@ -43,18 +46,51 @@ namespace WebAPI.Models
             tmp = Utility.GetArg(args, "time");
             if (tmp != args) item.Time = DateTime.Parse(tmp);
             else return null;
-            tmp = Utility.GetArg(args, "pm25");
-            if (tmp != args) item.PM25 = int.Parse(tmp);
-            tmp = Utility.GetArg(args, "pm10");
-            if (tmp != args) item.PM10 = int.Parse(tmp);
-            tmp = Utility.GetArg(args, "temper");
-            if (tmp != args) item.Temper = float.Parse(tmp);
-            tmp = Utility.GetArg(args, "humi");
-            if (tmp != args) item.Humi = float.Parse(tmp);
-            tmp = Utility.GetArg(args, "pressure");
-            if (tmp != args) item.Pressure = float.Parse(tmp);
+            tmp = Utility.GetArg(args, "data");
+            if (tmp != args) item.Data = tmp;
 
             return item;
+        }
+
+        public override string ToString()
+        {
+            return "{ " +
+                "\"ID\": " + "\"" + ID + "\", " +
+                "\"Time\":" + "\"" + Time.ToString("yyyy-MM-ddTHH:mm:ss") + "\", " +
+                "\"Data\":" + "\"" + Data + "\"" +
+                " }";
+        }
+
+        [SecurityPermission(SecurityAction.Demand, SerializationFormatter = true)]
+        protected DataItem(SerializationInfo info, StreamingContext context)
+        {
+            Type basetype = this.GetType().BaseType;
+            MemberInfo[] mi = FormatterServices.GetSerializableMembers(basetype, context);
+
+            for (int i = 0; i < mi.Length; i++)
+            {
+                FieldInfo fi = (FieldInfo)mi[0];
+                object objValue = info.GetValue(basetype.FullName + "+" + fi.Name, fi.FieldType);
+                fi.SetValue(this, objValue);
+            }
+
+            ID = info.GetString("ID");
+            Time = info.GetDateTime("Time");
+            Data = info.GetString("Data");
+        }
+
+        [SecurityPermission(SecurityAction.Demand, SerializationFormatter = true)]
+        void ISerializable.GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            info.AddValue("ID", ID);
+            info.AddValue("Time", Time);
+            info.AddValue("Data", Data);
+
+            Type basetype = this.GetType().BaseType;
+            MemberInfo[] mi = FormatterServices.GetSerializableMembers(basetype, context);
+
+            for (int i = 0; i < mi.Length; i++)
+                info.AddValue(basetype.FullName + "+" + mi[i].Name, ((FieldInfo)mi[i]).GetValue(this));
         }
     }
 }
